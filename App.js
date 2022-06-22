@@ -8,59 +8,128 @@ import {
   TextInput,
   ScrollView,
   Alert,
+  Platform,
 } from "react-native";
 import { theme } from "./colors";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { FontAwesome } from "@expo/vector-icons";
+import { FontAwesome, FontAwesome5, MaterialIcons } from "@expo/vector-icons";
 
 const STORAGE_KEY = "@toDos"; //key는 또 쓸거임!
+const CURRENT_BTN = "@cureentBtn"; //key는 또 쓸거임!
 
 export default function App() {
   const [working, setWorking] = useState(true);
   const [text, setText] = useState("");
+  const [editText, setEditText] = useState("");
   const [toDos, setToDos] = useState({});
-  const travel = () => setWorking(false);
-  const work = () => setWorking(true);
+  const [editMode, setEditMode] = useState(false);
+  const travel = () => {
+    setWorking(false);
+    AsyncStorage.setItem(CURRENT_BTN, JSON.stringify({ workbtn: false }));
+  };
+  const work = () => {
+    setWorking(true);
+    AsyncStorage.setItem(CURRENT_BTN, JSON.stringify({ workbtn: true }));
+  };
   const onChangeText = (payload) => setText(payload);
+  const onEditText = (payload) => setEditText(payload);
   const saveToDos = async (toSave) => {
     //(key,value) value는 string이어야 함
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   };
   const loadToDos = async () => {
-    const s = await AsyncStorage.getItem(STORAGE_KEY);
+    const s1 = await AsyncStorage.getItem(STORAGE_KEY);
+    const s2 = await AsyncStorage.getItem(CURRENT_BTN);
     //받아온 string 다시 객체로 만들어줌
-    setToDos(JSON.parse(s));
+    if (s1) {
+      setToDos(JSON.parse(s1));
+    }
+    if (s2) {
+      setWorking(JSON.parse(s2).workbtn);
+    }
   };
+
   useEffect(() => {
     //데이터 로드
     loadToDos();
   }, []);
+
   const addTodo = async () => {
     if (text === "") {
       //비어있으면 그냥 return;
       return;
     }
-    const newToDos = { ...toDos, [Date.now()]: { text, working } };
+    const newToDos = {
+      ...toDos,
+      [Date.now()]: { text, working, done: false, edit: false },
+    };
     //(목표객체, 출처객체, 추가하려는객체)
     setToDos(newToDos); //newToDos는 기존과 새로운게 합쳐진 객체
     await saveToDos(newToDos); //add되는 순간 save됨
     setText("");
   };
+
   const deleteToDo = async (key) => {
-    Alert.alert("Delete To Do?", "Are you sure?", [
-      { text: "Cancel" },
-      {
-        text: "I'm Sure",
-        style: "destructive", //스타일도 줄수있음! ios기준이래.
-        onPress: () => {
-          const newToDos = { ...toDos };
-          delete newToDos[key];
-          setToDos(newToDos);
-          saveToDos(newToDos);
+    if (Platform.OS === "web") {
+      const ok = confirm("Do you want to delete this To Do?");
+      if (ok) {
+        const newToDos = { ...toDos };
+        delete newToDos[key];
+        setToDos(newToDos);
+        saveToDos(newToDos);
+      }
+    } else {
+      Alert.alert("Delete To Do?", "Are you sure?", [
+        { text: "Cancel" },
+        {
+          text: "I'm Sure",
+          style: "destructive", //스타일도 줄수있음! ios기준이래.
+          onPress: () => {
+            const newToDos = { ...toDos };
+            delete newToDos[key];
+            setToDos(newToDos);
+            saveToDos(newToDos);
+          },
         },
-      },
-    ]);
+      ]);
+    }
   };
+
+  const editToDo = async (key) => {
+    //text 세팅해줄예정
+    const newToDos = { ...toDos };
+    if (editText === "" || editText === newToDos[key].text) {
+      newToDos[key].edit = false;
+      setToDos(newToDos);
+      return;
+    }
+    newToDos[key].text = editText;
+    newToDos[key].edit = false;
+    setToDos(newToDos);
+    await saveToDos(newToDos);
+  };
+
+  const setEditToDo = async (key) => {
+    setEditMode(!editMode);
+
+    if (editMode) {
+      const newToDos = { ...toDos };
+      newToDos[key].edit = true;
+      setToDos(newToDos);
+    } else {
+      const newToDos = { ...toDos };
+      newToDos[key].edit = false;
+    }
+    setToDos(newToDos);
+  };
+
+  const workDone = (key) => {
+    const newToDos = { ...toDos };
+    newToDos[key].done = !newToDos[key].done;
+    setToDos(newToDos);
+    saveToDos(newToDos);
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar style="auto" />
@@ -68,7 +137,12 @@ export default function App() {
       <View style={styles.header}>
         <TouchableOpacity onPress={work}>
           <Text
-            style={{ ...styles.btnText, color: working ? "white" : theme.grey }}
+            style={{
+              fontSize: 30,
+              fontWeight: "600",
+              color: "white",
+              color: working ? "white" : theme.grey,
+            }}
           >
             Work
           </Text>
@@ -76,7 +150,9 @@ export default function App() {
         <TouchableOpacity onPress={travel}>
           <Text
             style={{
-              ...styles.btnText,
+              fontSize: 30,
+              fontWeight: "600",
+              color: "white",
               color: !working ? "white" : theme.grey,
             }}
           >
@@ -98,13 +174,47 @@ export default function App() {
         {Object.keys(toDos).map((key) =>
           toDos[key].working === working ? (
             <View style={styles.toDo} key={key}>
-              <Text style={styles.toDoText}>{toDos[key].text}</Text>
-              {/* deleteToDo는 id 보내줘야하는데 여기서 아이디는 key야! */}
-              <TouchableOpacity onPress={() => deleteToDo(key)}>
-                <Text>
-                  <FontAwesome name="trash" size={20} color={theme.grey} />
-                </Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: "row" }}>
+                <TouchableOpacity onPress={() => workDone(key)}>
+                  <FontAwesome5
+                    name={toDos[key].done ? "check-square" : "square"}
+                    size={24}
+                    style={styles.workDone}
+                  />
+                </TouchableOpacity>
+                {toDos[key].edit ? (
+                  <TextInput
+                    onSubmitEditing={() => {
+                      editToDo(key);
+                    }}
+                    onChangeText={onEditText}
+                    defaultValue={toDos[key].text}
+                    returnKeyType="done"
+                    style={styles.editInput}
+                  ></TextInput>
+                ) : (
+                  <Text
+                    style={
+                      toDos[key].done ? styles.workDoneText : styles.toDoText
+                    }
+                  >
+                    {toDos[key].text}
+                  </Text>
+                )}
+              </View>
+              <View style={{ flexDirection: "row" }}>
+                <TouchableOpacity onPress={() => setEditToDo(key)}>
+                  <MaterialIcons
+                    style={{ marginRight: 14 }}
+                    name="edit"
+                    size={24}
+                    color="#fff"
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => deleteToDo(key)}>
+                  <FontAwesome name="trash" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
             </View>
           ) : null
         )}
@@ -125,11 +235,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginTop: 100,
   },
-  btnText: {
-    fontSize: 30,
-    fontWeight: "600",
-    color: "white",
-  },
   input: {
     backgroundColor: "white",
     paddingVertical: 15, //인풋 창 크기
@@ -141,7 +246,7 @@ const styles = StyleSheet.create({
   toDo: {
     backgroundColor: theme.grey,
     marginBottom: 10,
-    paddingVertical: 20,
+    paddingVertical: 25,
     paddingHorizontal: 30,
     borderRadius: 15,
     flexDirection: "row",
@@ -152,5 +257,23 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "500",
+  },
+  workDone: {
+    marginRight: 10,
+    color: "white",
+  },
+  workDoneText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "500",
+    textDecorationLine: "line-through",
+  },
+  editInput: {
+    width: 180,
+    fontSize: 16,
+    fontWeight: "500",
+    color: "white",
+    borderBottomColor: "white",
+    borderBottomWidth: 2,
   },
 });
